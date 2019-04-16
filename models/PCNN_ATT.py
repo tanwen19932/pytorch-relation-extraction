@@ -29,6 +29,12 @@ class PCNN_ATT(BasicModule):
 
         if self.opt.use_pcnn:
             rel_dim = all_filter_num * 3
+            masks = torch.LongTensor(([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]]))
+            if self.opt.use_gpu:
+                masks = masks.cuda()
+            self.mask_embedding = nn.Embedding(4, 3)
+            self.mask_embedding.weight.data.copy_(masks)
+            self.mask_embedding.weight.requires_grad = False
 
         self.rel_embs = nn.Parameter(torch.randn(self.opt.rel_num, rel_dim))
         self.rel_bias = nn.Parameter(torch.randn(self.opt.rel_num))
@@ -93,12 +99,6 @@ class PCNN_ATT(BasicModule):
         refer: https://github.com/thunlp/OpenNRE
         A fast piecewise pooling using mask
         '''
-        masks = torch.LongTensor(([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]]))
-        if self.opt.use_gpu:
-            masks = masks.cuda()
-        self.mask_embedding = nn.Embedding(4, 3)
-        self.mask_embedding.weight.data.copy_(masks)
-
         x = x.unsqueeze(-1).permute(0, 2, 1, 3)
         masks = self.mask_embedding(mask).unsqueeze(-2) * 100
         x = masks + x
@@ -135,11 +135,11 @@ class PCNN_ATT(BasicModule):
 
         if label is None:
             # for test
-            assert self.training == False
+            assert self.training is False
             return self.test(x)
         else:
             # for train
-            assert self.training == True
+            assert self.training is True
             return self.fit(x, label)
 
     def fit(self, x, label):
@@ -219,8 +219,8 @@ class PCNN_ATT(BasicModule):
 
         x = torch.cat([word_emb, pf1_emb, pf2_emb], 2)                          # insNum * 1 * maxLen * (word_dim + 2pos_dim)
         x = x.unsqueeze(1)                                                      # insNum * 1 * maxLen * (word_dim + 2pos_dim)
-        x = [F.tanh(conv(x)).squeeze(3) for conv in self.convs]
+        x = [conv(x).squeeze(3) for conv in self.convs]
         x = [self.mask_piece_pooling(i, mask) for i in x]
         # x = [self.piece_max_pooling(i, insPool) for i in x]
-        x = torch.cat(x, 1)
+        x = torch.cat(x, 1).tanh()
         return x
